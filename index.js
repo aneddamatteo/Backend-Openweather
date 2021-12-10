@@ -20,11 +20,11 @@ mongoose.connect(
 
 const location_weather_schema = new mongoose.Schema({
     _id: String ,
-    temp: Number,
-    humidity:Number,
-    wind:Number,
-    pressure: Number,
-    timestamp_refresh: Number
+    temp: Array,
+    humidity:Array,
+    wind:Array,
+    pressure: Array,
+    timestamp_refresh: Array
 });
 
 const Location_weather = mongoose.model('Location_weather', location_weather_schema);
@@ -40,10 +40,10 @@ app.get('/weather/:location', (req,res) => {
             let result_find = Location_weather.find({_id:result.location}).exec();
             result_find.then(data => {
                 if (data.length >= 1) {
-                    let difference = (Date.now() - data[0].timestamp_refresh)/minute_const;
+                    let difference = (Date.now() - data[0].timestamp_refresh[data[0].timestamp_refresh.length-1])/minute_const;
                     console.log(difference);
                     if (difference > refresh){
-                        Location_weather.updateOne({_id: result.location}, createModelMongo(result)).exec();
+                        Location_weather.updateOne({_id: result.location}, updateModelMongo(result,data[0])).exec();
                         res.send(result);
                     }
                     else {
@@ -66,7 +66,7 @@ app.get('/storedLocation', (req,res) => {
         if (data.length < 1)
             res.send("Database vuoto");
         else
-            res.send(data);
+            res.send(processAllDataFromMongo(data));
     });
 });
 
@@ -89,9 +89,9 @@ app.post('/insertLocation', (req,res) => {
     let manual_insert = Location_weather.find({_id:body.location}).exec();
     manual_insert.then(data => {
         if (data.length >= 1) {
-            let difference = (Date.now() - data[0].timestamp_refresh)/minute_const;
+            let difference = (Date.now() - data[0].timestamp_refresh[data[0].timestamp_refresh.length-1])/minute_const;
             if (difference > refresh){
-                Location_weather.updateOne({_id: body.location}, createModelMongo(body)).exec();
+                Location_weather.updateOne({_id: body.location}, updateModelMongo(body,data[0])).exec();
                 res.send({message:"La località è presente nel Database ed è stata aggiornata"});
             }
             else {
@@ -110,7 +110,7 @@ app.put('/updateLocation', (req,res) =>{
     let update = Location_weather.find({_id:body.location}).exec();
     update.then(data => {
         if (data.length == 1) {
-            Location_weather.updateOne({_id: body.location}, createModelMongo(body)).exec();
+            Location_weather.updateOne({_id: body.location}, updateModelMongo(body,data[0])).exec();
             res.send({message:"La località è presente nel Database ed è stata aggiornata"});
         }else{
             res.send({message:"La nuova località non presente nel database"});
@@ -153,25 +153,54 @@ function processData(body){
     }
     return result;
 }
+function processAllDataFromMongo(data){
+    let show_data = []
+    for (let x in data) {
+        show_data.push(processDataFromMongo(data[x]));
+    }
+    return show_data;
+}
 
 function processDataFromMongo(data){
     let result = {
         "location": data._id,
-        "temp": data.temp,
-        "humidity": data.humidity,
-        "wind": data.wind,
-        "pressure": data.pressure
+        "temp": data.temp[data.temp.length-1],
+        "humidity": data.humidity[data.humidity.length-1],
+        "wind": data.wind[data.wind.length-1],
+        "pressure": data.pressure[data.pressure.length-1]
     }
     return result;
 }
 function createModelMongo(result){
     let model = new Location_weather({
         _id: result.location ,
-        temp: result.temp,
-        humidity: result.humidity,
-        wind: result.wind,
-        pressure: result.pressure,
-        timestamp_refresh: Date.now()
+        temp: [result.temp],
+        humidity: [result.humidity],
+        wind:[result.wind],
+        pressure: [result.pressure],
+        timestamp_refresh: [Date.now()]
+    })
+    return model
+}
+
+function updateModelMongo(result,data){
+    if (result.temp.length > 0)
+        data.temp.push(result.temp);
+    if (result.humidity.length > 0)
+        data.humidity.push(result.humidity);
+    if (result.wind.length > 0)
+        data.wind.push(result.wind);
+    if (result.pressure.length > 0)
+        data.pressure.push(result.pressure);
+    data.timestamp_refresh.push(Date.now());
+
+    let model = new Location_weather({
+        _id: result.location ,
+        temp: data.temp,
+        humidity: data.humidity,
+        wind: data.wind,
+        pressure: data.pressure,
+        timestamp_refresh: data.timestamp_refresh
     })
     return model
 }
