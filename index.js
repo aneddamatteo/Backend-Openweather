@@ -99,6 +99,9 @@ passport.use(new JwtStrategy(opts, function(jwt_payload, done) {
     });
 }));
 
+app.get('/utente',passport.authenticate('jwt', {session:false}),  (req,res) =>{
+    res.send({username:req.user.username});
+});
 
 app.post('/login',async (req,res) => {
     try{
@@ -109,7 +112,7 @@ app.post('/login',async (req,res) => {
             if (psw == query.password) {
                 let token = jwt.sign({id:query._id,username:query.username,password:query.password}, secret_key,{expiresIn: 6000});
                 //const options = {maxAge: 600000};
-                res.cookie('jwt',token);
+                res.cookie(query.username,token);
                 res.json({message:"ok", success: true, token: token});
             }
             else
@@ -125,26 +128,32 @@ app.post('/login',async (req,res) => {
 
 app.put('/updateUser', passport.authenticate('jwt', {session:false}), async (req, res) => {
     try{
-        let user_mod = processUserData(req.body);
+        let user_mod = processUserDataUpdate(req.body);
         let message_psw = "Password non modificata", message_user ="Username non modificato";
         let old_user = req.user;
-        let psw = crypto_js.createHash('sha256').update(user_mod.password).digest('hex');
-
-        if (old_user.username != user_mod.username) {
+        let psw = null;
+        if (user_mod.password != null)
+            psw = crypto_js.createHash('sha256').update(user_mod.password).digest('hex');
+        let modified = false;
+        if (old_user.username != user_mod.username && user_mod.modifica_usr) {
             let query = await User.find({username: user_mod.username}).exec();
             if(query.length == 0){
                 await User.updateOne({_id: old_user._id},{username:user_mod.username}).exec();
+                modified = true;
+                res.cookie('jwt', {expires: Date.now()});
                 message_user = "Username modificato";
             }
             else{
                 message_user = "Username già in uso da un altro utente";
             }
         }
-        if (old_user.password != psw){
+        if (old_user.password != psw && user_mod.modifica_psw){
             await User.updateOne({_id: old_user._id},{password:psw}).exec();
+            modified = true
+            res.cookie('jwt', {expires: Date.now()});
             message_psw = "Password modificata";
         }
-        res.send({message_user:message_user,message_psw:message_psw});
+        res.send({message_user:message_user,message_psw:message_psw,modified:modified});
     }catch (e) {
         console.error(e);
     }
@@ -171,18 +180,19 @@ app.post('/registrazione',async (req,res) => {
         let result = await User.findOne({username:new_user.username}).exec();
         if (!result) {
             createNewUser(new_user);
-            res.send({message: "Username registrato correttamente"});
+            res.send({message: "Username registrato correttamente",success:true});
         }
         else {
-            res.send({message: "Username già in uso"});
+            res.send({message: "Username già in uso",success:false});
         }
     }catch (e) {
         console.error(e);
     }
-
 });
 
-app.get('/', passport.authenticate('jwt',{session:false}), (req,res) => res.send('My first REST API!'));
+app.get('/', (req,res) => {
+    res.send({bla:req.cookies})
+});
 
 app.get('/weather/:location', passport.authenticate('jwt', {session:false}), (req,res) => {
     try{
@@ -392,5 +402,14 @@ function processUserData(body){
     return {
         "username": body.username,
         "password": body.password
+    };
+}
+
+function processUserDataUpdate(body){
+    return {
+        "username": body.username,
+        "password": body.password,
+        "modifica_usr": body.modifica_usr,
+        "modifica_psw": body.modifica_psw
     };
 }
